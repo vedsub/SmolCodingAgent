@@ -1,0 +1,8 @@
+[
+    {
+        "path": "basket.py",
+        "failure_marker": "AssertionError",
+        "old_text": "price + quantity",
+        "new_text": "price * quantity"
+    }
+]

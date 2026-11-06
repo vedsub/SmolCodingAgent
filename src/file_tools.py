@@ -208,16 +208,23 @@ def run_tests(workspace, timeout=30):
 
     # Reject failures, errors and unsuccessful exit codes.
     if process.returncode != 0:
-        raise RuntimeError(
-            f"Tests failed with exit code {process.returncode}.\n"
-            f"stderr:\n{stderr}\n"
-            f"stdout:\n{stdout}"
-        )
-
+        return {
+            "success": False,
+            "tests_run": tests_run,
+            "stdout": stdout,
+            "stderr": stderr,
+            "returncode": process.returncode,
+            "error": f"Tests failed with exit code {process.returncode}",
+        }
     if not re.search(r"^OK\s*$", stderr, flags=re.MULTILINE):
-        raise RuntimeError(
-            "Unittest did not report a successful result"
-        )
+        return {
+            "success": False,
+            "tests_run": tests_run,
+            "stdout": stdout,
+            "stderr": stderr,
+            "returncode": process.returncode,
+            "error": "Unittest did not report a successful result",
+        }
 
     return {
         "success": True,
