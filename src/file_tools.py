@@ -3,6 +3,10 @@ import os
 import stat
 import tempfile
 
+import re
+import signal
+import subprocess
+import sys
 
 def resolve_workspace_file(workspace, requested_path):
 
@@ -108,3 +112,117 @@ def apply_patch(workspace, requested_path, old_text, new_text):
         # 10. Remove temporary file if it still exists
         if temp_path is not None and temp_path.exists():
             temp_path.unlink()
+
+
+def run_tests(workspace, timeout=30):
+    """
+    Run unittest discovery using a fixed command.
+
+    The model cannot supply executable commands or arguments.
+
+    Returns:
+        dict: Test execution details.
+
+    Raises:
+        RuntimeError: If tests fail, are skipped, or no tests execute.
+        TimeoutError: If the deadline is exceeded.
+    """
+
+    workspace = Path(workspace).resolve(strict=True)
+
+    if not workspace.is_dir():
+        raise NotADirectoryError("Workspace must be a directory")
+
+    if timeout <= 0:
+        raise ValueError("Timeout must be positive")
+
+    # Application-owned command. Never accept commands from the model.
+    command = [
+        sys.executable,
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-v",
+    ]
+
+    process = subprocess.Popen(
+        command,
+        cwd=str(workspace),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=(os.name == "posix"),
+    )
+
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+
+    except subprocess.TimeoutExpired:
+        if os.name == "posix":
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        else:
+            process.kill()
+
+        # Reap the process and collect any remaining output.
+        stdout, stderr = process.communicate()
+
+        raise TimeoutError(
+            f"Tests exceeded the {timeout}-second deadline"
+        )
+
+    # The unittest summary is written to stderr by unittest.
+    summary_matches = re.findall(
+        r"^Ran\s+(\d+)\s+tests?\s+in\s+[\d.]+s\s*$",
+        stderr,
+        flags=re.MULTILINE,
+    )
+
+    # Require exactly one genuine final unittest summary.
+    if len(summary_matches) != 1:
+        raise RuntimeError(
+            "Could not find exactly one unittest summary in stderr.\n"
+            f"stderr:\n{stderr}\n"
+            f"stdout:\n{stdout}"
+        )
+
+    tests_run = int(summary_matches[0])
+
+    # Reject zero-test executions.
+    if tests_run <= 0:
+        raise RuntimeError("Test suite executed zero tests")
+
+    # Reject skipped tests.
+    skipped = re.search(
+        r"\bskipped\s*=\s*(\d+)",
+        stderr,
+    )
+
+    if skipped and int(skipped.group(1)) > 0:
+        raise RuntimeError("Test suite contains skipped tests")
+
+    # Reject failures, errors and unsuccessful exit codes.
+    if process.returncode != 0:
+        raise RuntimeError(
+            f"Tests failed with exit code {process.returncode}.\n"
+            f"stderr:\n{stderr}\n"
+            f"stdout:\n{stdout}"
+        )
+
+    if not re.search(r"^OK\s*$", stderr, flags=re.MULTILINE):
+        raise RuntimeError(
+            "Unittest did not report a successful result"
+        )
+
+    return {
+        "success": True,
+        "tests_run": tests_run,
+        "stdout": stdout,
+        "stderr": stderr,
+        "returncode": process.returncode,
+    }

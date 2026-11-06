@@ -1,6 +1,5 @@
 import tempfile
 import unittest
-
 from pathlib import Path
 
 from src.file_tools import resolve_workspace_file, read_file
@@ -10,12 +9,10 @@ class TestWorkspaceFileTools(unittest.TestCase):
 
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
-
         self.workspace = Path(self.temp_dir.name) / "workspace"
         self.workspace.mkdir()
 
         self.file = self.workspace / "basket.py"
-
         self.file.write_text(
             "def calculate_total(price, quantity):\n"
             "    return price + quantity\n",
@@ -27,12 +24,10 @@ class TestWorkspaceFileTools(unittest.TestCase):
 
     def test_valid_file(self):
         result = resolve_workspace_file(self.workspace, "basket.py")
-
         self.assertEqual(result, self.file.resolve())
 
     def test_read_file(self):
         content = read_file(self.workspace, "basket.py")
-
         self.assertIn("calculate_total", content)
 
     def test_reject_absolute_path(self):
